@@ -64,6 +64,30 @@ def plot_positions(
     a.get_yaxis().set_visible(False)
     return f, a
 
+def plot_positions_map_control(
+    positions=[],
+    colors=[],
+    markers=[],
+    map_name="de_ancient",
+    map_type="original",
+    dark=False,
+    apply_transformation=False,
+):
+    """Plots positions"""
+    f, a = plot_map(map_name=map_name, map_type=map_type, dark=dark)
+    for p, c, m in zip(positions, colors, markers):
+        if apply_transformation:
+            a.scatter(
+                x=position_transform(map_name, p[0], "x"),
+                y=position_transform(map_name, p[1], "y"),
+                c=c,
+                marker=m,
+            )
+        else:
+            a.scatter(x=p[0], y=p[1], c=c, marker=m)
+    a.get_xaxis().set_visible(False)
+    a.get_yaxis().set_visible(False)
+    return f, a
 
 def plot_round(
     filename, frames, map_name="de_ancient", map_type="original", dark=False
