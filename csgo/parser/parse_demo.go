@@ -33,7 +33,7 @@ type Game struct {
 	Map            string       `json:"mapName"`
 	TickRate       int64        `json:"tickRate"`
 	PlaybackTicks  int64        `json:"playbackTicks"`
-	PlaybackFrames int64       `json:"playbackFrames"`
+	PlaybackFrames int64        `json:"playbackFrames"`
 	ParsedToFrame  int64        `json:"parsedToFrame"`
 	ParsingOpts    ParserOpts   `json:"parserParameters"`
 	ServerVars     ServerConVar `json:"serverVars"`
@@ -144,7 +144,7 @@ type GrenadeAction struct {
 	ThrowSecond       float64 `json:"throwSeconds"`
 	ThrowClockTime    string  `json:"throwClockTime"`
 	DestroySecond     float64 `json:"destroySeconds"`
-	DestroyClockTime  string  `json:"throwClockTime"`
+	DestroyClockTime  string  `json:"destroyClockTime"`
 	ThrowerSteamID    int64   `json:"throwerSteamID"`
 	ThrowerName       string  `json:"throwerName"`
 	ThrowerTeam       string  `json:"throwerTeam"`
@@ -167,7 +167,7 @@ type GrenadeAction struct {
 type BombAction struct {
 	Tick          int64   `json:"tick"`
 	Second        float64 `json:"seconds"`
-	ClockTime     string  `json:"clockTime`
+	ClockTime     string  `json:"clockTime"`
 	PlayerSteamID int64   `json:"playerSteamID"`
 	PlayerName    string  `json:"playerName"`
 	PlayerTeam    string  `json:"playerTeam"`
@@ -175,7 +175,7 @@ type BombAction struct {
 	PlayerY       float64 `json:"playerY"`
 	PlayerZ       float64 `json:"playerZ"`
 	BombAction    string  `json:"bombAction"`
-	BombSite      string  `json:"bombSite"`
+	BombSite      *string `json:"bombSite"`
 }
 
 // DamageAction events
@@ -845,7 +845,6 @@ func isTrade(killA KillAction, killB KillAction, tickRate int64, tradeTime int64
 		}
 		return false
 	}
-	return false
 }
 
 func countAlivePlayers(players []PlayerInfo) int64 {
@@ -1044,6 +1043,21 @@ func main() {
 
 	RoundRestartDelay := int64(5)
 
+	// Create empty lists
+	currentGame.MMRanks = []MMRank{}
+	currentGame.MatchPhases.AnnFinalRound = []int64{}
+	currentGame.MatchPhases.AnnFinalRound = []int64{}
+	currentGame.MatchPhases.AnnMatchStarted = []int64{}
+	currentGame.MatchPhases.GameHalfEnded = []int64{}
+	currentGame.MatchPhases.MatchStart = []int64{}
+	currentGame.MatchPhases.MatchStartedChanged = []int64{}
+	currentGame.MatchPhases.WarmupChanged = []int64{}
+	currentGame.MatchPhases.TeamSwitch = []int64{}
+	currentGame.MatchPhases.RoundStarted = []int64{}
+	currentGame.MatchPhases.RoundFreezeEnded = []int64{}
+	currentGame.MatchPhases.RoundEnded = []int64{}
+	currentGame.MatchPhases.RoundEndedOfficial = []int64{}
+
 	// Parse rank updates
 	p.RegisterEventHandler(func(e events.RankUpdate) {
 		rankUpdate := MMRank{}
@@ -1119,6 +1133,17 @@ func main() {
 		roundInFreezetime = 1
 		roundInEndTime = 0
 		currentRound = GameRound{}
+
+		// Create empty action lists
+		currentRound.Bomb = []BombAction{}
+		currentRound.Damages = []DamageAction{}
+		currentRound.Flashes = []FlashAction{}
+		currentRound.Frames = []GameFrame{}
+		currentRound.Grenades = []GrenadeAction{}
+		currentRound.Kills = []KillAction{}
+		currentRound.WeaponFires = []WeaponFireAction{}
+
+		// Parse flags
 		currentRound.IsWarmup = gs.IsWarmupPeriod()
 		currentRound.RoundNum = int64(len(currentGame.Rounds) + 1)
 		currentRound.StartTick = int64(gs.IngameTick())
@@ -1204,6 +1229,16 @@ func main() {
 			roundStarted = 1
 			roundInEndTime = 0
 			currentRound = GameRound{}
+
+			// Create empty action lists
+			currentRound.Bomb = []BombAction{}
+			currentRound.Damages = []DamageAction{}
+			currentRound.Flashes = []FlashAction{}
+			currentRound.Frames = []GameFrame{}
+			currentRound.Grenades = []GrenadeAction{}
+			currentRound.Kills = []KillAction{}
+			currentRound.WeaponFires = []WeaponFireAction{}
+
 			currentRound.IsWarmup = gs.IsWarmupPeriod()
 			currentRound.RoundNum = int64(len(currentGame.Rounds) + 1)
 			currentRound.StartTick = int64(gs.IngameTick() - int(currentGame.TickRate)*int(currentGame.ServerVars.FreezeTime))
@@ -1305,6 +1340,16 @@ func main() {
 	// Parse round ends
 	p.RegisterEventHandler(func(e events.RoundEnd) {
 		gs := p.GameState()
+		
+		if roundStarted == 1 {
+			if (gs.TeamTerrorists() != nil) && (gs.TeamCounterTerrorists() != nil) {
+				tTeam := gs.TeamTerrorists().ClanName()
+				ctTeam := gs.TeamCounterTerrorists().ClanName()
+				currentRound.TTeam = &tTeam
+				currentRound.CTTeam = &ctTeam
+			}
+		}
+		
 		currentGame.MatchPhases.RoundEnded = append(currentGame.MatchPhases.RoundEnded, int64(gs.IngameTick()))
 
 		if roundStarted == 0 {
@@ -1382,12 +1427,14 @@ func main() {
 		currentBomb.Second = determineSecond(currentBomb.Tick, currentRound, currentGame)
 		currentBomb.ClockTime = calculateClocktime(currentBomb.Tick, currentRound, currentGame)
 		currentBomb.BombAction = "defuse"
-		currentBomb.BombSite = ""
+		bombSite := ""
 		if e.Site == 65 {
-			currentBomb.BombSite = "A"
+			bombSite = "A"
 		} else if e.Site == 66 {
-			currentBomb.BombSite = "B"
+			bombSite = "B"
 		}
+		currentBomb.BombSite = &bombSite
+
 		currentBomb.PlayerSteamID = int64(e.Player.SteamID64)
 		currentBomb.PlayerName = e.Player.Name
 		if (e.Player.TeamState != nil) {
@@ -1400,7 +1447,7 @@ func main() {
 		currentBomb.PlayerY = float64(playerPos.Y)
 		currentBomb.PlayerZ = float64(playerPos.Z)
 
-		// add
+		// add bomb event
 		currentRound.Bomb = append(currentRound.Bomb, currentBomb)
 	})
 
@@ -1416,12 +1463,14 @@ func main() {
 
 		// Find bombsite where event is planted
 		bombSite := ""
+		bombPlantFound := false
 		for _, b := range currentRound.Bomb {
 			if b.BombAction == "plant" {
-				bombSite = b.BombSite
+				bombSite = *b.BombSite
+				bombPlantFound = true
 			}
 		}
-		currentBomb.BombSite = bombSite	
+		currentBomb.BombSite = &bombSite	
 
 		currentBomb.PlayerSteamID = int64(e.Player.SteamID64)
 		currentBomb.PlayerName = e.Player.Name
@@ -1436,7 +1485,9 @@ func main() {
 		currentBomb.PlayerZ = float64(playerPos.Z)
 
 		// add
-		currentRound.Bomb = append(currentRound.Bomb, currentBomb)
+		if bombPlantFound {
+			currentRound.Bomb = append(currentRound.Bomb, currentBomb)
+		}
 	})
 
 	// Parse bomb defuses
@@ -1451,12 +1502,14 @@ func main() {
 
 		// Find bombsite where event is planted
 		bombSite := ""
+		bombPlantFound := false
 		for _, b := range currentRound.Bomb {
 			if b.BombAction == "plant" {
-				bombSite = b.BombSite
+				bombSite = *b.BombSite
+				bombPlantFound = true
 			}
 		}
-		currentBomb.BombSite = bombSite	
+		currentBomb.BombSite = &bombSite
 
 		currentBomb.PlayerSteamID = int64(e.Player.SteamID64)
 		currentBomb.PlayerName = e.Player.Name
@@ -1470,8 +1523,10 @@ func main() {
 		currentBomb.PlayerY = float64(playerPos.Y)
 		currentBomb.PlayerZ = float64(playerPos.Z)
 
-		// add
-		currentRound.Bomb = append(currentRound.Bomb, currentBomb)
+		// Add Bomb Event
+		if bombPlantFound {
+			currentRound.Bomb = append(currentRound.Bomb, currentBomb)
+		}
 	})
 
 	// Parse weapon fires
@@ -1678,13 +1733,14 @@ func main() {
 		currentBomb.Second = determineSecond(currentBomb.Tick, currentRound, currentGame)
 		currentBomb.ClockTime = calculateClocktime(currentBomb.Tick, currentRound, currentGame)
 		currentBomb.BombAction = "plant"
-		currentBomb.BombSite = ""
 
+		bombSite := ""
 		if e.Site == 65 {
-			currentBomb.BombSite = "A"
+			bombSite = "A"
 		} else if e.Site == 66 {
-			currentBomb.BombSite = "B"
+			bombSite = "B"
 		}
+		currentBomb.BombSite = &bombSite
 
 		currentBomb.PlayerSteamID = int64(e.Player.SteamID64)
 		currentBomb.PlayerName = e.Player.Name
@@ -1713,13 +1769,14 @@ func main() {
 		currentBomb.Second = determineSecond(currentBomb.Tick, currentRound, currentGame)
 		currentBomb.ClockTime = calculateClocktime(currentBomb.Tick, currentRound, currentGame)
 		currentBomb.BombAction = "plant_begin"
-		currentBomb.BombSite = ""
 
+		bombSite := ""
 		if e.Site == 65 {
-			currentBomb.BombSite = "A"
+			bombSite = "A"
 		} else if e.Site == 66 {
-			currentBomb.BombSite = "B"
+			bombSite = "B"
 		}
+		currentBomb.BombSite = &bombSite
 
 		currentBomb.PlayerSteamID = int64(e.Player.SteamID64)
 		currentBomb.PlayerName = e.Player.Name
@@ -1749,12 +1806,14 @@ func main() {
 
 		// Find bombsite where event is planted
 		bombSite := ""
+		bombPlantFound := false
 		for _, b := range currentRound.Bomb {
 			if b.BombAction == "plant_begin" {
-				bombSite = b.BombSite
+				bombSite = *b.BombSite
+				bombPlantFound = true
 			}
 		}
-		currentBomb.BombSite = bombSite		
+		currentBomb.BombSite = &bombSite
 
 		currentBomb.PlayerSteamID = int64(e.Player.SteamID64)
 		currentBomb.PlayerName = e.Player.Name
@@ -1768,8 +1827,10 @@ func main() {
 		currentBomb.PlayerY = float64(playerPos.Y)
 		currentBomb.PlayerZ = float64(playerPos.Z)
 
-		// Bomb event
-		currentRound.Bomb = append(currentRound.Bomb, currentBomb)
+		// Add Bomb event
+		if bombPlantFound {
+			currentRound.Bomb = append(currentRound.Bomb, currentBomb)
+		}
 	})
 
 	// Parse grenade throws
@@ -1908,7 +1969,8 @@ func main() {
 		if e.Killer != nil {
 			attackerSteamID := int64(e.Killer.SteamID64)
 			currentKill.AttackerSteamID = &attackerSteamID
-			currentKill.AttackerName = &e.Killer.Name
+			attackerName := e.Killer.Name
+			currentKill.AttackerName = &attackerName
 			if (e.Killer.TeamState != nil) {
 				attackerTeamName := e.Killer.TeamState.ClanName()
 				currentKill.AttackerTeam = &attackerTeamName
@@ -1963,7 +2025,8 @@ func main() {
 		if e.Victim != nil {
 			victimSteamID := int64(e.Victim.SteamID64)
 			currentKill.VictimSteamID = &victimSteamID
-			currentKill.VictimName = &e.Victim.Name
+			victimName := e.Victim.Name
+			currentKill.VictimName = &victimName
 			if (e.Victim.TeamState != nil) {
 				victimTeamName := e.Victim.TeamState.ClanName()
 				currentKill.VictimTeam = &victimTeamName
@@ -2051,7 +2114,8 @@ func main() {
 		if e.Assister != nil {
 			assistSteamID := int64(e.Assister.SteamID64)
 			currentKill.AssisterSteamID = &assistSteamID
-			currentKill.AssisterName = &e.Assister.Name
+			assisterName := e.Assister.Name
+			currentKill.AssisterName = &assisterName
 			if (e.Assister.TeamState != nil) {
 				assistTeamName := e.Assister.TeamState.ClanName()
 				currentKill.AssisterTeam = &assistTeamName
@@ -2131,7 +2195,8 @@ func main() {
 		if e.Attacker != nil {
 			attackerSteamID := int64(e.Attacker.SteamID64)
 			currentDamage.AttackerSteamID = &attackerSteamID
-			currentDamage.AttackerName = &e.Attacker.Name
+			attackerName := e.Attacker.Name
+			currentDamage.AttackerName = &attackerName
 			if (e.Attacker.TeamState != nil) {
 				attackerTeamName := e.Attacker.TeamState.ClanName()
 				currentDamage.AttackerTeam = &attackerTeamName
@@ -2188,7 +2253,8 @@ func main() {
 		if e.Player != nil {
 			victimSteamID := int64(e.Player.SteamID64)
 			currentDamage.VictimSteamID = &victimSteamID
-			currentDamage.VictimName = &e.Player.Name
+			victimName := e.Player.Name
+			currentDamage.VictimName = &victimName
 			if (e.Player.TeamState != nil) {
 				victimTeamName := e.Player.TeamState.ClanName()
 				currentDamage.VictimTeam = &victimTeamName
@@ -2248,6 +2314,11 @@ func main() {
 
 		if (roundInFreezetime == 0) && (currentFrameIdx == 0) && (parseFrames == true) {
 			currentFrame := GameFrame{}
+
+			// Create empty player lists
+			currentFrame.CT.Players = []PlayerInfo{}
+			currentFrame.T.Players = []PlayerInfo{}
+
 			currentFrame.Tick = int64(gs.IngameTick())
 			currentFrame.Second = determineSecond(currentFrame.Tick, currentRound, currentGame)
 			currentFrame.ClockTime = calculateClocktime(currentFrame.Tick, currentRound, currentGame)
@@ -2376,7 +2447,7 @@ func main() {
 				for _, b := range currentRound.Bomb {
 					if b.BombAction == "plant" {
 						currentFrame.BombPlanted = true
-						currentFrame.BombSite = b.BombSite
+						currentFrame.BombSite = *b.BombSite
 					}
 				}	
 			} else {

@@ -46,6 +46,21 @@ class TestDemoParser:
         print("Removing " + demo_name)
         os.remove(demo_name + ".dem")
 
+    @staticmethod
+    def _check_round_scores(rounds):
+        for i, r in enumerate(rounds):
+            if i == 0:
+                assert r["tScore"] == 0
+                assert r["ctScore"] == 0
+            if i > 0 and i != len(rounds):
+                winningSide = rounds[i-1]["winningSide"]
+                if winningSide == "ct":
+                    assert r["ctScore"] > rounds[i-1]["ctScore"]
+                    assert r["tScore"] == rounds[i-1]["tScore"]
+                if winningSide == "t":
+                    assert r["ctScore"] == rounds[i-1]["ctScore"]
+                    assert r["tScore"] > rounds[i-1]["tScore"]
+
     def test_demo_id_inferred(self):
         """Tests if a demo_id is correctly inferred"""
         self.parser_inferred = DemoParser(
@@ -170,6 +185,14 @@ class TestDemoParser:
         assert self.default_data["parserParameters"]["tradeTime"] == 5
         assert self.default_data["parserParameters"]["roundBuyStyle"] == "hltv"
         assert self.default_data["parserParameters"]["parseRate"] == 256
+        for r in self.default_data["gameRounds"]:
+            assert type(r["bombEvents"]) == list
+            assert type(r["damages"]) == list
+            assert type(r["kills"]) == list
+            assert type(r["flashes"]) == list
+            assert type(r["grenades"]) == list
+            assert type(r["weaponFires"]) == list
+            assert type(r["frames"]) == list
 
     def test_default_parse_df(self):
         """Tests default parse to dataframe"""
@@ -201,3 +224,26 @@ class TestDemoParser:
             d = self.parser_new._parse_frames()
             d = self.parser_new._parse_player_frames()
             d = self.parser_new._parse_weapon_fires()
+
+    def test_bot_name(self):
+        """Tests if bot naming is correct (brought up by Charmees).
+        Original error had "Troy" (bot) showing up instead of "Charmees" (player)
+        """
+        self.bot_name_parser = DemoParser(demofile="bot_name_test.dem", log=False, parse_frames=False)
+        self.bot_name_data = self.bot_name_parser.parse()
+        charmees_found = 0
+        for r in self.bot_name_data["gameRounds"]:
+            if r["damages"]:
+                for e in r["damages"]:
+                    if e["victimName"] == "Charmees":
+                        charmees_found += 1
+        assert charmees_found > 0
+
+    def test_warmup(self):
+        """ Tests if warmup rounds are properly parsing
+        """
+        self.warmup_parser = DemoParser(demofile="warmup_test.dem", log=False, parse_frames=False)
+        self.warmup_data = self.warmup_parser.parse()
+        self.warmup_data = self.warmup_parser.clean_rounds()
+        assert len(self.warmup_data["gameRounds"]) == 30
+        self._check_round_scores(self.warmup_data["gameRounds"])
